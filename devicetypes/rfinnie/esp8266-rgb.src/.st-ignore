@@ -1,0 +1,6 @@
+.st-ignore
+main.py
+server.py
+server.mpy
+README.md
+Makefile

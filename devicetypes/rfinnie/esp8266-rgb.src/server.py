@@ -10,9 +10,11 @@ import gc
 
 LISTEN_ADDR = '0.0.0.0'
 LISTEN_PORT = 8080
+AUTH_SECRET = None
 LED_R_PIN = 13
 LED_G_PIN = 12
 LED_B_PIN = 14
+INIT_LIGHT_TEST = True
 STATE = {
     'switch': 'off',
     'red': 253,
@@ -21,7 +23,7 @@ STATE = {
     'hue': 0.0,
     'saturation': 0.0,
     'level': 100,
-    'frequency': 1000,
+    'frequency': 60,
     'fadetime': 1000,
 }
 
@@ -31,6 +33,9 @@ LED_B = machine.PWM(machine.Pin(LED_B_PIN), freq=STATE['frequency'], duty=0)
 
 
 def init_lights():
+    if not INIT_LIGHT_TEST:
+        set_lights()
+        return
     if STATE['fadetime']:
         fadesteps = int(STATE['fadetime'] / 50.0)
         fadeduties = [int(math.sin((i+1) / fadesteps * math.pi) * 1023) for i in range(fadesteps)]
@@ -106,14 +111,23 @@ def set_lights():
 
 def parse_data(reqdata):
     j = json.loads(reqdata)
-    for k in j:
-        if j[k] is None:
-            continue
-        if k == 'fadetime' and j[k] > 0 and j[k] < 50:
-            j[k] = 50
-        STATE[k] = j[k]
-    response = json.dumps(STATE).encode('ASCII')
-    return response
+    if 'state' in j:
+        for k in j['state']:
+            if k not in STATE:
+                continue
+            if j['state'][k] is None:
+                continue
+            if k == 'fadetime' and j['state'][k] > 0 and j['state'][k] < 50:
+                j['state'][k] = 50
+            STATE[k] = j['state'][k]
+    return j
+
+
+def http_error(cl_file, cl, code, desc):
+    print('ERROR: {} ({})'.format(desc, code))
+    cl_file.write(b'HTTP/1.0 {} {}\r\n\r\n{}\r\n'.format(code, desc, desc))
+    cl_file.close()
+    cl.close()
 
 
 def process_connection(cl, addr):
@@ -133,9 +147,7 @@ def process_connection(cl, addr):
             break
         elif in_firstline:
             if not line.startswith(b'POST '):
-                cl_file.write(b'HTTP/1.0 400 Bad Request\r\n\r\nBad Request\r\n')
-                cl_file.close()
-                cl.close()
+                http_error(cl_file, cl, 400, 'Bad Request')
                 break
             in_firstline = False
             good_request = True
@@ -143,24 +155,37 @@ def process_connection(cl, addr):
             content_length = int(line[16:-2])
         elif line == b'\r\n':
             in_dataarea = True
-    if good_request:
-        print('IN: {}'.format(reqdata))
-        try:
-            response = parse_data(reqdata)
-        except:
-            cl_file.write(b'HTTP/1.0 500 Internal Server Error\r\n\r\nInternal Server Error\r\n')
-            cl_file.close()
-            cl.close()
+
+    if not good_request:
+        return
+    print('IN: {}'.format(reqdata))
+    try:
+        j = parse_data(reqdata)
+    except:
+        http_error(cl_file, cl, 500, 'Internal Server Error')
+        return
+
+    if AUTH_SECRET is not None:
+        if ('auth' not in j) or (j['auth'] != AUTH_SECRET):
+            http_error(cl_file, cl, 403, 'Forbidden')
             return
-        print('OUT: {}'.format(response))
-        cl_file.write(b'HTTP/1.1 200 OK\r\n')
-        cl_file.write(b'Content-Type: application/json; charset=utf-8\r\n')
-        cl_file.write(b'Content-Length: ' + str(len(response)).encode('ASCII') + b'\r\n')
-        cl_file.write(b'\r\n')
-        cl_file.write(response)
-        cl_file.close()
-        cl.close()
-        set_lights()
+
+    response = json.dumps({
+        'state': STATE,
+    }).encode('ASCII')
+    print('OUT: {}'.format(response))
+    cl_file.write(b'HTTP/1.1 200 OK\r\n')
+    cl_file.write(b'Content-Type: application/json; charset=utf-8\r\n')
+    cl_file.write(b'Content-Length: ' + str(len(response)).encode('ASCII') + b'\r\n')
+    cl_file.write(b'\r\n')
+    cl_file.write(response)
+    cl_file.close()
+    cl.close()
+    if 'cmd' in j and j['cmd'] == 'reset':
+        time.sleep(1)
+        machine.reset()
+        return
+    set_lights()
 
 
 def main():

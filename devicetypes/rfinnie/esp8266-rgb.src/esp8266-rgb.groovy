@@ -22,14 +22,16 @@ metadata {
 		capability "Switch"
 		capability "Refresh"
 
-		command "reset"
 		command "refresh"
+		command "resetcolor"
+		command "resetdevice"
 	}
 
 	preferences {
 		section() {
 			input name: "pwmFrequency", type: "number", title: "PWM frequency [Hz]", defaultValue: 1000, range: "1..1000"
 			input name: "fadeTime", type: "number", title: "Transition fade time [ms]", defaultValue: 1000, range: "0..10000"
+			input name: "deviceAuth", type: "password", title: "Device authentication (optional)"
 		}
 	}
 
@@ -53,15 +55,18 @@ tiles(scale: 2) {
 			state "color", label: '${currentValue}'
 		}
 
-		standardTile("reset", "device.reset", inactiveLabel: false, decoration: "flat", width: 2, height: 2) {
-			state "reset", label:"Reset Color", action:"reset", icon:"st.lights.philips.hue-single", defaultState: true
+		standardTile("resetcolor", "device.resetcolor", inactiveLabel: false, decoration: "flat", width: 2, height: 2) {
+			state "resetcolor", label:"Reset Color", action:"resetcolor", icon:"st.lights.philips.hue-single", defaultState: true
 		}
 		standardTile("refresh", "device.switch", inactiveLabel: false, decoration: "flat", width: 2, height: 2) {
 			state "refresh", label:"", action:"refresh.refresh", icon:"st.secondary.refresh", defaultState: true
 		}
+		standardTile("resetdevice", "device.resetdevice", inactiveLabel: false, decoration: "flat", width: 2, height: 2) {
+			state "resetdevice", label:"Reset Device", action:"resetdevice", icon:"st.lights.philips.hue-single", defaultState: true
+		}
 
 		main(["switch"])
-		details(["switch", "color", "refresh", "reset"])
+		details(["switch", "color", "refresh", "resetcolor", "resetdevice"])
 	}
 }
 
@@ -72,13 +77,15 @@ def parse(description) {
 	def json = msg.json
 	log.debug msg.json
 
-	if (json.red) { sendEvent(name: "red", value: json.red)}
-	if (json.green) { sendEvent(name: "green", value: json.green)}
-	if (json.blue) { sendEvent(name: "blue", value: json.blue)}
-	if (json.hue) { sendEvent(name: "hue", value: json.hue)}
-	if (json.saturation) { sendEvent(name: "saturation", value: json.saturation)}
-	if (json.level) { sendEvent(name: "level", value: json.level)}
-	if (json.switch) { sendEvent(name: "switch", value: json.switch)}
+	if (json.state) {
+		if (json.state.red) { sendEvent(name: "red", value: json.state.red)}
+		if (json.state.green) { sendEvent(name: "green", value: json.state.green)}
+		if (json.state.blue) { sendEvent(name: "blue", value: json.state.blue)}
+		if (json.state.hue) { sendEvent(name: "hue", value: json.state.hue)}
+		if (json.state.saturation) { sendEvent(name: "saturation", value: json.state.saturation)}
+		if (json.state.level) { sendEvent(name: "level", value: json.state.level)}
+		if (json.state.switch) { sendEvent(name: "switch", value: json.state.switch)}
+	}
 }
 
 private Integer convertHexToInt(hex) {
@@ -127,18 +134,24 @@ private sendHTTPRequest(data) {
 def on() {
 	log.debug "Turning light on"
 	sendHTTPRequest([
-		switch: "on",
-		frequency: settings.pwmFrequency,
-		fadetime: settings.fadeTime
+		auth: settings.deviceAuth,
+		state: [
+			switch: "on",
+			frequency: settings.pwmFrequency,
+			fadetime: settings.fadeTime
+		]
 	])
 }
 
 def off() {
 	log.debug "Turning light off"
 	sendHTTPRequest([
-		switch: "off",
-		frequency: settings.pwmFrequency,
-		fadetime: settings.fadeTime
+		auth: settings.deviceAuth,
+		state: [
+			switch: "off",
+			frequency: settings.pwmFrequency,
+			fadetime: settings.fadeTime
+		]
 	])
 }
 
@@ -147,29 +160,35 @@ def setLevel(percent) {
 	sendEvent(name: "level", value: percent)
 
 	sendHTTPRequest([
-		level: percent,
-		frequency: settings.pwmFrequency,
-		fadetime: settings.fadeTime
+		auth: settings.deviceAuth,
+		state: [
+			level: percent,
+			frequency: settings.pwmFrequency,
+			fadetime: settings.fadeTime
+		]
 	])
 }
 
 def setColor(value) {
 	log.debug "setColor: ${value}"
 	sendHTTPRequest([
-		level: value.level,
-		switch: value.switch,
-		red: value.red,
-		green: value.green,
-		blue: value.blue,
-		hue: value.hue,
-		saturation: value.saturation,
-		frequency: settings.pwmFrequency,
-		fadetime: settings.fadeTime
+		auth: settings.deviceAuth,
+		state: [
+			level: value.level,
+			switch: value.switch,
+			red: value.red,
+			green: value.green,
+			blue: value.blue,
+			hue: value.hue,
+			saturation: value.saturation,
+			frequency: settings.pwmFrequency,
+			fadetime: settings.fadeTime
+		]
 	])
 }
 
-def reset() {
-	log.debug "Reset"
+def resetcolor() {
+	log.debug "Reset Color"
 	setColor([
 		level:100,
 		red:253,
@@ -177,8 +196,17 @@ def reset() {
 		blue:236
 	])
 }
+def resetdevice() {
+	log.debug "Reset Device"
+	sendHTTPRequest([
+		auth: settings.deviceAuth,
+		cmd: "reset"
+	])
+}
 
 def refresh() {
 	log.debug "Refresh"
-	sendHTTPRequest([])
+	sendHTTPRequest([
+		auth: settings.deviceAuth,
+	])
 }
