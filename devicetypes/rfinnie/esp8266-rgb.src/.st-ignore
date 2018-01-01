@@ -1,6 +1,3 @@
 .st-ignore
-main.py
-server.py
-server.mpy
+device
 README.md
-Makefile

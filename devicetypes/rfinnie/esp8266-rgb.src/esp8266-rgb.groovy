@@ -22,6 +22,7 @@ metadata {
 		capability "Switch"
 		capability "Refresh"
 
+		command "demo"
 		command "refresh"
 		command "resetcolor"
 		command "resetdevice"
@@ -29,7 +30,7 @@ metadata {
 
 	preferences {
 		section() {
-			input name: "pwmFrequency", type: "number", title: "PWM frequency [Hz]", defaultValue: 1000, range: "1..1000"
+			input name: "pwmFrequency", type: "number", title: "PWM frequency [Hz]", defaultValue: 100, range: "1..1000"
 			input name: "fadeTime", type: "number", title: "Transition fade time [ms]", defaultValue: 1000, range: "0..10000"
 			input name: "deviceAuth", type: "password", title: "Device authentication (optional)"
 		}
@@ -64,9 +65,12 @@ tiles(scale: 2) {
 		standardTile("resetdevice", "device.resetdevice", inactiveLabel: false, decoration: "flat", width: 2, height: 2) {
 			state "resetdevice", label:"Reset Device", action:"resetdevice", icon:"st.lights.philips.hue-single", defaultState: true
 		}
+		standardTile("demo", "device.demo", inactiveLabel: false, decoration: "flat", width: 2, height: 2) {
+			state "demo", label:"Demo", action:"demo", icon:"st.lights.philips.hue-single", defaultState: true
+		}
 
 		main(["switch"])
-		details(["switch", "color", "refresh", "resetcolor", "resetdevice"])
+		details(["switch", "color", "refresh", "resetcolor", "resetdevice", "demo"])
 	}
 }
 
@@ -196,11 +200,20 @@ def resetcolor() {
 		blue:236
 	])
 }
+
 def resetdevice() {
 	log.debug "Reset Device"
 	sendHTTPRequest([
 		auth: settings.deviceAuth,
 		cmd: "reset"
+	])
+}
+
+def demo() {
+	log.debug "Demo"
+	sendHTTPRequest([
+		auth: settings.deviceAuth,
+		cmd: "demo"
 	])
 }
 

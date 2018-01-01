@@ -20,16 +20,37 @@ STATE = {
     'red': 253,
     'green': 248,
     'blue': 236,
-    'hue': 0.0,
-    'saturation': 0.0,
+    'hue': 11.7647,
+    'saturation': 6.71937,
     'level': 100,
-    'frequency': 60,
+    'frequency': 100,
     'fadetime': 1000,
 }
 
 LED_R = machine.PWM(machine.Pin(LED_R_PIN), freq=STATE['frequency'], duty=0)
 LED_G = machine.PWM(machine.Pin(LED_G_PIN), freq=STATE['frequency'], duty=0)
 LED_B = machine.PWM(machine.Pin(LED_B_PIN), freq=STATE['frequency'], duty=0)
+
+
+def hsv_to_rgb(h, s, v):
+    if s == 0.0:
+        return (v, v, v)
+    i = int(h*6.)  # assume int() truncates
+    f = (h*6.)-i
+    p, q, t = v*(1.-s), v*(1.-s*f), v*(1.-s*(1.-f))
+    i %= 6
+    if i == 0:
+        return (v, t, p)
+    elif i == 1:
+        return (q, v, p)
+    elif i == 2:
+        return (p, v, t)
+    elif i == 3:
+        return (p, q, v)
+    elif i == 4:
+        return (t, p, v)
+    elif i == 5:
+        return (v, p, q)
 
 
 def init_lights():
@@ -56,6 +77,17 @@ def init_lights():
             time.sleep_ms(fadedelay)
         for j in i:
             j.duty(0)
+    set_lights()
+
+
+def demo_lights():
+    for l in range(3):
+        for i in range(40):
+            r, g, b = hsv_to_rgb(i / 40, 1, 1)
+            LED_R.duty(int(r * 1023))
+            LED_G.duty(int(g * 1023))
+            LED_B.duty(int(b * 1023))
+            time.sleep_ms(50)
     set_lights()
 
 
@@ -181,10 +213,13 @@ def process_connection(cl, addr):
     cl_file.write(response)
     cl_file.close()
     cl.close()
-    if 'cmd' in j and j['cmd'] == 'reset':
-        time.sleep(1)
-        machine.reset()
-        return
+    if 'cmd' in j:
+        if j['cmd'] == 'reset':
+            time.sleep(1)
+            machine.reset()
+            return
+        if j['cmd'] == 'demo':
+            demo_lights()
     set_lights()
 
 
