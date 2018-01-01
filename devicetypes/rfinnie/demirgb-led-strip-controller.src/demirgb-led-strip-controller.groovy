@@ -15,7 +15,7 @@
 import groovy.json.JsonOutput
 
 metadata {
-	definition (name: "ESP8266 RGB", namespace: "rfinnie", author: "Ryan Finnie") {
+	definition (name: "DemiRGB LED Strip Controller", namespace: "rfinnie", author: "Ryan Finnie") {
 		capability "Switch Level"
 		capability "Actuator"
 		capability "Color Control"
