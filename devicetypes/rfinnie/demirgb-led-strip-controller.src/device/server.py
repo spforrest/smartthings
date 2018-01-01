@@ -1,5 +1,23 @@
 #!/usr/bin/env micropython
 
+# DemiRGB ESP8266 server
+# Copyright (C) 2018 Ryan Finnie
+#
+# This program is free software; you can redistribute it and/or
+# modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation; either version 2
+# of the License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+# 02110-1301, USA.
+
 import socket
 import json
 import time
@@ -11,15 +29,19 @@ import gc
 LISTEN_ADDR = '0.0.0.0'
 LISTEN_PORT = 8080
 AUTH_SECRET = None
+SYSLOG_HOST = '10.9.8.1'
+SYSLOG_ID = 'demirgb'
 LED_R_PIN = 13
 LED_G_PIN = 12
 LED_B_PIN = 14
 INIT_LIGHT_TEST = True
+USE_HSV = True
 STATE = {
     'switch': 'off',
     'red': 253,
     'green': 248,
     'blue': 236,
+    'hex': '#FDF8EC',
     'hue': 11.7647,
     'saturation': 6.71937,
     'level': 100,
@@ -30,6 +52,16 @@ STATE = {
 LED_R = machine.PWM(machine.Pin(LED_R_PIN), freq=STATE['frequency'], duty=0)
 LED_G = machine.PWM(machine.Pin(LED_G_PIN), freq=STATE['frequency'], duty=0)
 LED_B = machine.PWM(machine.Pin(LED_B_PIN), freq=STATE['frequency'], duty=0)
+SYSLOG_SOCKET = None
+
+
+def debug(text):
+    print(text)
+    if SYSLOG_SOCKET and text:
+        SYSLOG_SOCKET.sendto(
+            '<135>{} demirgb: {}'.format(SYSLOG_ID, text).encode('ASCII'),
+            (SYSLOG_HOST, 514),
+        )
 
 
 def hsv_to_rgb(h, s, v):
@@ -70,7 +102,7 @@ def init_lights():
         (LED_R, LED_G), (LED_G, LED_B), (LED_R, LED_B),
         (LED_R, LED_G, LED_B)
     ):
-        print('Testing: {}'.format(i))
+        debug('Testing: {}'.format(i))
         for fadeduty in fadeduties:
             for j in i:
                 j.duty(fadeduty)
@@ -93,9 +125,15 @@ def demo_lights():
 
 def set_lights():
     if STATE['switch'] == 'on':
-        ledto_r = int((STATE['red'] / 255 * 1023) * (STATE['level'] / 100.0))
-        ledto_g = int((STATE['green'] / 255 * 1023) * (STATE['level'] / 100.0))
-        ledto_b = int((STATE['blue'] / 255 * 1023) * (STATE['level'] / 100.0))
+        if USE_HSV:
+            r, g, b = hsv_to_rgb(STATE['hue'] / 100.0, STATE['saturation'] / 100.0, STATE['level'] / 100.0)
+            ledto_r = int(r * 1023)
+            ledto_g = int(g * 1023)
+            ledto_b = int(b * 1023)
+        else:
+            ledto_r = int((STATE['red'] / 255 * 1023) * (STATE['level'] / 100.0))
+            ledto_g = int((STATE['green'] / 255 * 1023) * (STATE['level'] / 100.0))
+            ledto_b = int((STATE['blue'] / 255 * 1023) * (STATE['level'] / 100.0))
     else:
         ledto_r = 0
         ledto_g = 0
@@ -108,17 +146,17 @@ def set_lights():
         # Deinit all first, as all PWMs must be running at the
         # same frequency at the same time
         for i in (LED_R, LED_G, LED_B):
-            print('{}.deinit()'.format(i))
+            debug('{}.deinit()'.format(i))
             i.deinit()
-        print('LED_R.init(freq={}, duty={})'.format(freq, ledfrom_r))
+        debug('LED_R.init(freq={}, duty={})'.format(freq, ledfrom_r))
         LED_R.init(freq=freq, duty=ledfrom_r)
-        print('LED_G.init(freq={}, duty={})'.format(freq, ledfrom_g))
+        debug('LED_G.init(freq={}, duty={})'.format(freq, ledfrom_g))
         LED_G.init(freq=freq, duty=ledfrom_g)
-        print('LED_B.init(freq={}, duty={})'.format(freq, ledfrom_b))
+        debug('LED_B.init(freq={}, duty={})'.format(freq, ledfrom_b))
         LED_B.init(freq=freq, duty=ledfrom_b)
 
     if (ledfrom_r != ledto_r) or (ledfrom_g != ledto_g) or (ledfrom_b != ledto_b):
-        print('PWM: Setting to R={}, G={}, B={}'.format(ledto_r, ledto_g, ledto_b))
+        debug('PWM: Setting to R={}, G={}, B={}'.format(ledto_r, ledto_g, ledto_b))
         if STATE['fadetime']:
             fadesteps = int(STATE['fadetime'] / 50.0)
             fadeduties = [[
@@ -132,7 +170,7 @@ def set_lights():
         else:
             fadeduties = [(ledto_r, ledto_g, ledto_b)]
             fadedelay = 0
-        print('R,G,B fades: {}, {}ms'.format(fadeduties, fadedelay))
+        debug('R,G,B fades: {}, {}ms'.format(fadeduties, fadedelay))
 
         for (r, g, b) in fadeduties:
             LED_R.duty(r)
@@ -156,14 +194,14 @@ def parse_data(reqdata):
 
 
 def http_error(cl_file, cl, code, desc):
-    print('ERROR: {} ({})'.format(desc, code))
+    debug('ERROR: {} ({})'.format(desc, code))
     cl_file.write(b'HTTP/1.0 {} {}\r\n\r\n{}\r\n'.format(code, desc, desc))
     cl_file.close()
     cl.close()
 
 
 def process_connection(cl, addr):
-    print('New connection: {}'.format(addr))
+    debug('New connection: {}'.format(addr))
     in_firstline = True
     in_dataarea = False
     good_request = False
@@ -190,7 +228,7 @@ def process_connection(cl, addr):
 
     if not good_request:
         return
-    print('IN: {}'.format(reqdata))
+    debug('IN: {}'.format(reqdata))
     try:
         j = parse_data(reqdata)
     except:
@@ -199,13 +237,13 @@ def process_connection(cl, addr):
 
     if AUTH_SECRET is not None:
         if ('auth' not in j) or (j['auth'] != AUTH_SECRET):
-            http_error(cl_file, cl, 403, 'Forbidden')
+            http_error(cl_file, cl, 401, 'Unauthorized')
             return
 
     response = json.dumps({
         'state': STATE,
     }).encode('ASCII')
-    print('OUT: {}'.format(response))
+    debug('OUT: {}'.format(response))
     cl_file.write(b'HTTP/1.1 200 OK\r\n')
     cl_file.write(b'Content-Type: application/json; charset=utf-8\r\n')
     cl_file.write(b'Content-Length: ' + str(len(response)).encode('ASCII') + b'\r\n')
@@ -224,6 +262,11 @@ def process_connection(cl, addr):
 
 
 def main():
+    global SYSLOG_SOCKET
+
+    if SYSLOG_HOST:
+        SYSLOG_SOCKET = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
     init_lights()
 
     addr = socket.getaddrinfo(LISTEN_ADDR, LISTEN_PORT)[0][-1]
@@ -231,13 +274,13 @@ def main():
     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     s.bind(addr)
     s.listen(1)
-    print('Listen: {}'.format(addr))
+    debug('Listen: {}'.format(addr))
 
     while True:
         gc.collect()
-        print('Memory free: {}'.format(gc.mem_free()))
+        debug('Memory free: {}'.format(gc.mem_free()))
         process_connection(*s.accept())
-        print()
+        debug('')
 
 
 if __name__ == '__main__':

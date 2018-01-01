@@ -1,5 +1,5 @@
 /**
- *  Copyright 2017 Ryan Finnie
+ *  Copyright 2018 Ryan Finnie
  *
  *  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
  *  in compliance with the License. You may obtain a copy of the License at:
@@ -85,6 +85,8 @@ def parse(description) {
 		if (json.state.red) { sendEvent(name: "red", value: json.state.red)}
 		if (json.state.green) { sendEvent(name: "green", value: json.state.green)}
 		if (json.state.blue) { sendEvent(name: "blue", value: json.state.blue)}
+		// Yes, for some reason the color picker sends "hex", but the event is "color"
+		if (json.state.hex) { sendEvent(name: "color", value: json.state.hex)}
 		if (json.state.hue) { sendEvent(name: "hue", value: json.state.hue)}
 		if (json.state.saturation) { sendEvent(name: "saturation", value: json.state.saturation)}
 		if (json.state.level) { sendEvent(name: "level", value: json.state.level)}
@@ -183,6 +185,7 @@ def setColor(value) {
 			red: value.red,
 			green: value.green,
 			blue: value.blue,
+			hex: value.hex,
 			hue: value.hue,
 			saturation: value.saturation,
 			frequency: settings.pwmFrequency,
